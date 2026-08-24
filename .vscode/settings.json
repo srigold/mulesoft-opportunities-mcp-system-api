@@ -1,10 +1,48 @@
 {
+    "maven.settingsFile": "/Users/sriko@vsp.com/apache-maven-3.8.6/conf/settings-play.xml",
+    "maven.terminal.customUserSettingsFile": "/Users/sriko@vsp.com/apache-maven-3.8.6/conf/settings-play.xml",
+    "java.configuration.maven.userSettings": "/Users/sriko@vsp.com/apache-maven-3.8.6/conf/settings-play.xml",
+    "java.configuration.maven.globalSettings": "/Users/sriko@vsp.com/apache-maven-3.8.6/conf/settings-play.xml",
+    "mule.dependencies.javaHome": "/Library/Java/JavaVirtualMachines/openlogic-openjdk-17.jdk/Contents/Home",
+    "mule.runtime.muleRuntimesDirectory": "/Users/sriko@vsp.com/AnypointCodeBuilder/runtime",
+    "mule.runtime.muleHome": "/Users/sriko@vsp.com/AnypointCodeBuilder/runtime/mule-enterprise-standalone-4.11.6",
+    "mule.application.defaultMuleRuntimeAndJavaVersions": {
+        "muleRuntimeVersion": "4.11.6",
+        "javaVersion": "17"
+    },
+    "mule.runtime.defaultArguments": [
+        "-M-XX:-UseBiasedLocking",
+        "-M-Dfile.encoding=UTF-8",
+        "-M-XX:+UseG1GC",
+        "-M-XX:+UseStringDeduplication",
+        "-M-Dmule.deployment.forceParseConfigXmls=true",
+        "-M-Dmule.forceConsoleLog",
+        "-M-Dmule.verbose.exceptions=true",
+        "-Djava.net.preferIPv4Stack=true",
+        "-Dmule.env=dev"
+    ],
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-17",
+            "path": "/Library/Java/JavaVirtualMachines/openlogic-openjdk-17.jdk/Contents/Home",
+            "default": true
+        }
+    ],
     "files.exclude": {
         "**/.git": true,
         "**/.svn": true,
         "**/.hg": true,
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
+        "**/.apivcs": true,
+        "**/.gitignore": true,
+        "**/.designer.json": true,
+        "**/.exchange.xml": true,
+        "**/.vscode": false,
+        "**/.mvn": true,
+        "**/.tmp": true,
+        "**/.settings": true,
+        "**/.exchange_modules_tmp": true,
         ".mule": true
     }
 }

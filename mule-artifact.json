@@ -1,4 +1,5 @@
 {
+  "name": "mulesoft-opportunities-mcp-system-api",
   "minMuleVersion": "4.11.0",
   "javaSpecificationVersions": [
     "17"
