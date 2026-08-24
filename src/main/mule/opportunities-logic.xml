@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ============================================================
+         SHARED BUSINESS LOGIC
+         These sub-flows are protocol-agnostic: they read inputs from
+         vars (never from HTTP attributes or MCP tool-call payload
+         directly) and leave results in `payload`/vars as plain
+         application/java values. Both the HTTP listener flows
+         (opportunities-system-api.xml) and the MCP tool-listener flows
+         (mulesoft-opportunities-mcp-system-api.xml) call into these via
+         <flow-ref>, then handle their own protocol-specific request
+         parsing and response formatting.
+         ============================================================ -->
+
+    <!-- ============================================================
+         LOGIC: LIST / FILTER OPPORTUNITIES
+         IN  vars.nameFilter, vars.priorityFilter, vars.stageFilter (String, optional)
+             vars.highPriorityOnly ("true"/"false" String, optional)
+         OUT payload = filtered/sorted List (application/java)
+             vars.recordCount = Number
+         ============================================================ -->
+    <sub-flow name="list-opportunities-logic" doc:name="List Opportunities Logic">
+
+        <os:retrieve-all
+            objectStore="Opportunities_Object_Store"
+            doc:name="Retrieve All Opportunities" />
+
+        <ee:transform doc:name="Filter Opportunities"
+                      doc:description="Applies name/priority/highPriorityOnly/stageName filters; returns sorted Java list">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var allOpps        = payload pluck $
+var nameFilter     = (vars.nameFilter        default "") as String
+var priorityFilter = (vars.priorityFilter    default "") as String
+var stageFilter    = (vars.stageFilter       default "") as String
+var highOnly       = (vars.highPriorityOnly  default "false") as String == "true"
+---
+(allOpps
+  filter (isEmpty(nameFilter)     or lower($.name as String)    contains lower(nameFilter))
+  filter (isEmpty(priorityFilter) or ($.priority as String)     == priorityFilter)
+  filter (!highOnly               or ($.priority as String)     == "High")
+  filter (isEmpty(stageFilter)    or ($.stageName as String)    == stageFilter)
+) orderBy $.name]]></ee:set-payload>
+            </ee:message>
+            <ee:variables>
+                <ee:set-variable variableName="recordCount"><![CDATA[%dw 2.0
+output application/java
+var allOpps        = payload pluck $
+var nameFilter     = (vars.nameFilter        default "") as String
+var priorityFilter = (vars.priorityFilter    default "") as String
+var stageFilter    = (vars.stageFilter       default "") as String
+var highOnly       = (vars.highPriorityOnly  default "false") as String == "true"
+---
+sizeOf(allOpps
+  filter (isEmpty(nameFilter)     or lower($.name as String)    contains lower(nameFilter))
+  filter (isEmpty(priorityFilter) or ($.priority as String)     == priorityFilter)
+  filter (!highOnly               or ($.priority as String)     == "High")
+  filter (isEmpty(stageFilter)    or ($.stageName as String)    == stageFilter)
+)]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+
+    </sub-flow>
+
+
+    <!-- ============================================================
+         LOGIC: UPDATE OPPORTUNITY (field-level merge)
+         IN  vars.targetOppId (String)
+             vars.updateFields (Map: amount/stageName/priority/probability/closeDate/nextStep)
+         OUT vars.oppFound (boolean)
+             payload = updated record (application/java) when found; untouched otherwise
+         ============================================================ -->
+    <sub-flow name="update-opportunity-logic" doc:name="Update Opportunity Logic">
+
+        <os:contains
+            key="#[vars.targetOppId]"
+            objectStore="Opportunities_Object_Store"
+            target="oppFound"
+            doc:name="Check Opportunity Exists" />
+
+        <choice doc:name="Route: Exists or Not">
+            <when expression="#[vars.oppFound]" doc:name="Opportunity found — merge and persist">
+
+                <os:retrieve
+                    key="#[vars.targetOppId]"
+                    objectStore="Opportunities_Object_Store"
+                    target="existingOpp"
+                    doc:name="Retrieve Existing Opportunity" />
+
+                <ee:transform doc:name="Merge Update Fields"
+                              doc:description="Merges update fields over existing record; oppId/name/accountName/owner are immutable">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var existing = vars.existingOpp
+var updates  = vars.updateFields default {}
+---
+{
+    oppId:       existing.oppId,
+    name:        existing.name,
+    accountName: existing.accountName,
+    amount:      updates.amount      default existing.amount,
+    stageName:   updates.stageName   default existing.stageName,
+    priority:    updates.priority    default existing.priority,
+    probability: updates.probability default existing.probability,
+    closeDate:   updates.closeDate   default existing.closeDate,
+    nextStep:    updates.nextStep    default existing.nextStep,
+    owner:       existing.owner
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+
+                <os:store
+                    key="#[vars.targetOppId]"
+                    objectStore="Opportunities_Object_Store"
+                    doc:name="Persist Updated Opportunity">
+                    <os:value>#[payload]</os:value>
+                </os:store>
+
+            </when>
+            <otherwise doc:name="Not found — leave payload untouched">
+                <logger level="DEBUG" message="#['No opportunity found for key: ' ++ vars.targetOppId]" doc:name="Log Not Found (no-op)" />
+            </otherwise>
+        </choice>
+
+    </sub-flow>
+
+
+    <!-- ============================================================
+         LOGIC: CLOSE OPPORTUNITY
+         IN  vars.targetOppId (String)
+             vars.closeFields (Map: stageName [required, Closed Won|Closed Lost], closeReason, actualAmount)
+         OUT vars.validationValid (boolean), vars.validationMessage (String, when invalid)
+             vars.oppFound (boolean, only meaningful when validationValid is true)
+             payload = closed record (application/java) on success
+         ============================================================ -->
+    <sub-flow name="close-opportunity-logic" doc:name="Close Opportunity Logic">
+
+        <choice doc:name="Validate stageName">
+
+            <when expression="#[!(vars.closeFields.stageName == 'Closed Won' or vars.closeFields.stageName == 'Closed Lost')]"
+                  doc:name="Invalid stageName">
+                <set-variable variableName="validationValid" value="#[false]" doc:name="Mark Invalid" />
+                <set-variable
+                    variableName="validationMessage"
+                    value="#['stageName must be \'Closed Won\' or \'Closed Lost\'. Received: ' ++ ((vars.closeFields.stageName default 'null') as String)]"
+                    doc:name="Build Validation Message" />
+            </when>
+
+            <otherwise doc:name="Valid stageName — proceed">
+                <set-variable variableName="validationValid" value="#[true]" doc:name="Mark Valid" />
+
+                <os:contains
+                    key="#[vars.targetOppId]"
+                    objectStore="Opportunities_Object_Store"
+                    target="oppFound"
+                    doc:name="Check Opportunity Exists" />
+
+                <choice doc:name="Route: Exists or Not">
+                    <when expression="#[vars.oppFound]" doc:name="Opportunity found — close it">
+
+                        <os:retrieve
+                            key="#[vars.targetOppId]"
+                            objectStore="Opportunities_Object_Store"
+                            target="existingOpp"
+                            doc:name="Retrieve Opportunity to Close" />
+
+                        <ee:transform doc:name="Apply Close Mutation"
+                                      doc:description="Sets stageName, probability (100 for Won/0 for Lost), actualAmount, and today as closeDate">
+                            <ee:message>
+                                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var existing = vars.existingOpp
+var closeReq = vars.closeFields
+var isWon    = closeReq.stageName == "Closed Won"
+---
+{
+    oppId:       existing.oppId,
+    name:        existing.name,
+    accountName: existing.accountName,
+    amount:      closeReq.actualAmount default existing.amount,
+    stageName:   closeReq.stageName,
+    priority:    existing.priority,
+    probability: if (isWon) 100 else 0,
+    closeDate:   now() as Date as String {format: "yyyy-MM-dd"},
+    nextStep:    closeReq.closeReason default existing.nextStep,
+    owner:       existing.owner
+}]]></ee:set-payload>
+                            </ee:message>
+                        </ee:transform>
+
+                        <os:store
+                            key="#[vars.targetOppId]"
+                            objectStore="Opportunities_Object_Store"
+                            doc:name="Persist Closed Opportunity">
+                            <os:value>#[payload]</os:value>
+                        </os:store>
+
+                    </when>
+                    <otherwise doc:name="Not found — leave payload untouched">
+                <logger level="DEBUG" message="#['No opportunity found for key: ' ++ vars.targetOppId]" doc:name="Log Not Found (no-op)" />
+            </otherwise>
+                </choice>
+
+            </otherwise>
+
+        </choice>
+
+    </sub-flow>
+
+</mule>

@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:mcp="http://www.mulesoft.org/schema/mule/mcp"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/mcp http://www.mulesoft.org/schema/mule/mcp/current/mule-mcp.xsd">
+
+    <!-- ============================================================
+         MCP TOOLS
+         Each tool-listener triggers a flow that parses the tool's
+         input arguments (delivered as a Java map in `payload`) into
+         vars, delegates to the SAME shared logic sub-flows used by the
+         REST API (opportunities-logic.xml), then formats the MCP tool
+         response. Business logic itself is never duplicated here.
+         Server mounted at http://<host>:8081/mcp (Streamable HTTP).
+         ============================================================ -->
+
+    <!-- ============================================================
+         TOOL: list_opportunities
+         ============================================================ -->
+    <flow name="mcp-list-opportunities-flow" doc:name="MCP List Opportunities Flow">
+
+        <mcp:tool-listener
+            config-ref="MCP_Server_Config"
+            name="list_opportunities"
+            doc:name="Tool: list_opportunities">
+            <mcp:description>Lists sales opportunities, optionally filtered by name (substring match), priority (High/Medium/Low), highPriorityOnly, and/or exact stageName. Returns the full opportunity records as a JSON array.</mcp:description>
+            <mcp:parameters-schema><![CDATA[{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Filter by opportunity name (case-insensitive substring match)"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["High", "Medium", "Low"],
+      "description": "Filter by exact priority"
+    },
+    "highPriorityOnly": {
+      "type": "boolean",
+      "description": "If true, only return High priority opportunities",
+      "default": false
+    },
+    "stageName": {
+      "type": "string",
+      "description": "Filter by exact stage name, e.g. 'Qualification', 'Value Proposition', 'Closed Won', 'Closed Lost'"
+    }
+  },
+  "required": []
+}]]></mcp:parameters-schema>
+            <mcp:responses>
+                <mcp:text-tool-response-content text="#[write(payload, 'application/json')]" />
+            </mcp:responses>
+            <mcp:on-error-responses>
+                <mcp:text-tool-response-content text="#['Error listing opportunities: ' ++ error.description]" />
+            </mcp:on-error-responses>
+        </mcp:tool-listener>
+
+        <set-variable variableName="nameFilter" value="#[payload.name default '']" doc:name="Set nameFilter" />
+        <set-variable variableName="priorityFilter" value="#[payload.priority default '']" doc:name="Set priorityFilter" />
+        <set-variable variableName="stageFilter" value="#[payload.stageName default '']" doc:name="Set stageFilter" />
+        <set-variable variableName="highPriorityOnly" value="#[(payload.highPriorityOnly default false) as String]" doc:name="Set highPriorityOnly" />
+
+        <flow-ref name="list-opportunities-logic" doc:name="List Opportunities" />
+
+    </flow>
+
+
+    <!-- ============================================================
+         TOOL: update_opportunity
+         ============================================================ -->
+    <flow name="mcp-update-opportunity-flow" doc:name="MCP Update Opportunity Flow">
+
+        <mcp:tool-listener
+            config-ref="MCP_Server_Config"
+            name="update_opportunity"
+            doc:name="Tool: update_opportunity">
+            <mcp:description>Updates one or more fields (amount, stageName, priority, probability, closeDate, nextStep) on an existing opportunity identified by oppId. Fields not provided are left unchanged. Fails if the oppId does not exist.</mcp:description>
+            <mcp:parameters-schema><![CDATA[{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "oppId": {
+      "type": "string",
+      "description": "The unique ID of the opportunity to update, e.g. '0068000000Lx1AA'"
+    },
+    "amount": {
+      "type": "number",
+      "description": "Deal amount in USD"
+    },
+    "stageName": {
+      "type": "string",
+      "description": "Sales stage, e.g. 'Qualification', 'Negotiation/Review'"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["High", "Medium", "Low"]
+    },
+    "probability": {
+      "type": "number",
+      "description": "Win probability percentage (0-100)"
+    },
+    "closeDate": {
+      "type": "string",
+      "description": "Expected close date, format yyyy-MM-dd"
+    },
+    "nextStep": {
+      "type": "string",
+      "description": "Next action to take on this opportunity"
+    }
+  },
+  "required": ["oppId"]
+}]]></mcp:parameters-schema>
+            <mcp:responses>
+                <mcp:text-tool-response-content text="#[write(payload, 'application/json')]" />
+            </mcp:responses>
+            <mcp:on-error-responses>
+                <mcp:text-tool-response-content text="#['Error updating opportunity: ' ++ error.description]" />
+            </mcp:on-error-responses>
+        </mcp:tool-listener>
+
+        <set-variable variableName="targetOppId" value="#[payload.oppId]" doc:name="Set targetOppId" />
+        <set-variable variableName="updateFields" value="#[payload]" doc:name="Set updateFields" />
+
+        <flow-ref name="update-opportunity-logic" doc:name="Update Opportunity" />
+
+        <choice doc:name="Route: Updated or Not Found">
+            <when expression="#[!vars.oppFound]" doc:name="Not found — raise error">
+                <raise-error
+                    type="APP:NOT_FOUND"
+                    description="#['Opportunity not found: ' ++ vars.targetOppId]"
+                    doc:name="Raise Not Found" />
+            </when>
+        </choice>
+
+    </flow>
+
+
+    <!-- ============================================================
+         TOOL: close_opportunity
+         ============================================================ -->
+    <flow name="mcp-close-opportunity-flow" doc:name="MCP Close Opportunity Flow">
+
+        <mcp:tool-listener
+            config-ref="MCP_Server_Config"
+            name="close_opportunity"
+            doc:name="Tool: close_opportunity">
+            <mcp:description>Closes an opportunity identified by oppId, marking it Closed Won or Closed Lost. Automatically sets probability (100 for Won, 0 for Lost) and stamps closeDate as today. Fails if stageName is not 'Closed Won'/'Closed Lost' or if the oppId does not exist.</mcp:description>
+            <mcp:parameters-schema><![CDATA[{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "oppId": {
+      "type": "string",
+      "description": "The unique ID of the opportunity to close"
+    },
+    "stageName": {
+      "type": "string",
+      "enum": ["Closed Won", "Closed Lost"],
+      "description": "Final stage — must be 'Closed Won' or 'Closed Lost'"
+    },
+    "actualAmount": {
+      "type": "number",
+      "description": "Actual closed amount, if different from the original amount"
+    },
+    "closeReason": {
+      "type": "string",
+      "description": "Reason or note for closing the opportunity"
+    }
+  },
+  "required": ["oppId", "stageName"]
+}]]></mcp:parameters-schema>
+            <mcp:responses>
+                <mcp:text-tool-response-content text="#[write(payload, 'application/json')]" />
+            </mcp:responses>
+            <mcp:on-error-responses>
+                <mcp:text-tool-response-content text="#['Error closing opportunity: ' ++ error.description]" />
+            </mcp:on-error-responses>
+        </mcp:tool-listener>
+
+        <set-variable variableName="targetOppId" value="#[payload.oppId]" doc:name="Set targetOppId" />
+        <set-variable variableName="closeFields" value="#[payload]" doc:name="Set closeFields" />
+
+        <flow-ref name="close-opportunity-logic" doc:name="Close Opportunity" />
+
+        <choice doc:name="Route: Invalid, Not Found, or Closed">
+            <when expression="#[!vars.validationValid]" doc:name="Invalid stageName — raise error">
+                <raise-error
+                    type="APP:VALIDATION"
+                    description="#[vars.validationMessage]"
+                    doc:name="Raise Validation Error" />
+            </when>
+            <when expression="#[!vars.oppFound]" doc:name="Not found — raise error">
+                <raise-error
+                    type="APP:NOT_FOUND"
+                    description="#['Opportunity not found: ' ++ vars.targetOppId]"
+                    doc:name="Raise Not Found" />
+            </when>
+        </choice>
+
+    </flow>
+
+</mule>

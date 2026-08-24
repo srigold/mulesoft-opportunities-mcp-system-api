@@ -1,0 +1,193 @@
+{
+  "info": {
+    "name": "Opportunities System API",
+    "description": "Local test collection for mulesoft-opportunities-mcp-system-api (Mule 4.11.6, port 8081)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8081/api/v1" },
+    { "key": "oppId", "value": "0068000000Lx1AA" }
+  ],
+  "item": [
+    {
+      "name": "GET All Opportunities",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/opportunities",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities"]
+        }
+      }
+    },
+    {
+      "name": "GET Opportunities - Filter by name",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/opportunities?name=Acme",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities"],
+          "query": [
+            { "key": "name", "value": "Acme" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "GET Opportunities - Filter by priority",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/opportunities?priority=High",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities"],
+          "query": [
+            { "key": "priority", "value": "High" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "GET Opportunities - High priority only",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/opportunities?highPriorityOnly=true",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities"],
+          "query": [
+            { "key": "highPriorityOnly", "value": "true" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "GET Opportunities - Filter by stageName",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/opportunities?stageName=Qualification",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities"],
+          "query": [
+            { "key": "stageName", "value": "Qualification" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "PATCH Update Opportunity",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stageName\": \"Negotiation/Review\",\n  \"amount\": 275000.00,\n  \"priority\": \"High\",\n  \"probability\": 85,\n  \"nextStep\": \"Send Revised Contract\",\n  \"closeDate\": \"2026-10-05\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/opportunities/{{oppId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities", "{{oppId}}"]
+        }
+      }
+    },
+    {
+      "name": "PATCH Update Opportunity - Not Found (404)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stageName\": \"Negotiation/Review\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/opportunities/0068000000UNKNOWN",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities", "0068000000UNKNOWN"]
+        }
+      }
+    },
+    {
+      "name": "PATCH Close Opportunity - Closed Won",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stageName\": \"Closed Won\",\n  \"actualAmount\": 245000.00,\n  \"closeReason\": \"Signed Master Services Agreement\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/opportunities/{{oppId}}/close",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities", "{{oppId}}", "close"]
+        }
+      }
+    },
+    {
+      "name": "PATCH Close Opportunity - Closed Lost",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stageName\": \"Closed Lost\",\n  \"closeReason\": \"Budget reallocated to Q1 2027\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/opportunities/0068000000Lx3CC/close",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities", "0068000000Lx3CC", "close"]
+        }
+      }
+    },
+    {
+      "name": "PATCH Close Opportunity - Invalid stageName (400)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stageName\": \"In Progress\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/opportunities/{{oppId}}/close",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities", "{{oppId}}", "close"]
+        }
+      }
+    },
+    {
+      "name": "PATCH Close Opportunity - Not Found (404)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stageName\": \"Closed Won\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/opportunities/0068000000UNKNOWN/close",
+          "host": ["{{baseUrl}}"],
+          "path": ["opportunities", "0068000000UNKNOWN", "close"]
+        }
+      }
+    }
+  ]
+}

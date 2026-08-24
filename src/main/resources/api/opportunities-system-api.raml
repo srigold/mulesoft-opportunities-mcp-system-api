@@ -1,0 +1,232 @@
+#%RAML 1.0
+title: MuleSoft Opportunities MCP System API
+version: v1
+baseUri: http://localhost:8081/api/{version}
+mediaType: application/json
+
+types:
+  Opportunity:
+    type: object
+    properties:
+      oppId:
+        type: string
+        description: Salesforce Opportunity ID (18-char record ID)
+        example: "0068000000Lx1AA"
+      name:
+        type: string
+        description: Opportunity name
+        example: "Acme Corp Enterprise License Expansion"
+      accountName:
+        type: string
+        description: Account name associated with this opportunity
+        example: "Acme Corp"
+      amount:
+        type: number
+        description: Opportunity amount in USD
+        example: 250000.00
+      stageName:
+        type: string
+        description: Current sales stage
+        enum: [Prospecting, Qualification, Needs Analysis, Value Proposition, "Negotiation/Review", "Proposal/Price Quote", "Closed Won", "Closed Lost"]
+        example: "Value Proposition"
+      priority:
+        type: string
+        description: Opportunity priority level
+        enum: [High, Medium, Low]
+        example: "High"
+      probability:
+        type: integer
+        description: Win probability percentage (0–100)
+        minimum: 0
+        maximum: 100
+        example: 75
+      closeDate:
+        type: string
+        description: Target close date in YYYY-MM-DD format
+        example: "2026-09-30"
+      nextStep:
+        type: string
+        description: Next action to advance the opportunity
+        example: "Finalize Security Review"
+      owner:
+        type: string
+        description: Sales owner full name
+        example: "Srikanth K."
+
+  OpportunityUpdate:
+    type: object
+    description: Partial update payload — all fields optional
+    properties:
+      amount?:
+        type: number
+        description: Updated opportunity amount in USD
+      stageName?:
+        type: string
+        description: Updated sales stage
+        enum: [Prospecting, Qualification, Needs Analysis, Value Proposition, "Negotiation/Review", "Proposal/Price Quote", "Closed Won", "Closed Lost"]
+      priority?:
+        type: string
+        description: Updated priority level
+        enum: [High, Medium, Low]
+      nextStep?:
+        type: string
+        description: Updated next step description
+      closeDate?:
+        type: string
+        description: Updated close date (YYYY-MM-DD)
+      probability?:
+        type: integer
+        description: Updated win probability (0–100)
+        minimum: 0
+        maximum: 100
+
+  CloseOpportunityRequest:
+    type: object
+    description: Request payload for closing an opportunity
+    properties:
+      stageName:
+        type: string
+        description: Final stage — must be Closed Won or Closed Lost
+        enum: ["Closed Won", "Closed Lost"]
+        required: true
+        example: "Closed Won"
+      closeReason?:
+        type: string
+        description: Optional reason for closing
+        example: "Contract signed; all security reviews passed"
+      actualAmount?:
+        type: number
+        description: Actual deal amount at close (may differ from forecast)
+        example: 245000.00
+
+  ErrorResponse:
+    type: object
+    properties:
+      status:
+        type: integer
+      message:
+        type: string
+      correlationId?:
+        type: string
+      timestamp:
+        type: string
+
+/opportunities:
+  description: Salesforce Opportunity collection endpoints
+
+  get:
+    description: Retrieve all opportunities with optional filtering
+    queryParameters:
+      name?:
+        type: string
+        description: Partial case-insensitive search against opportunity name
+        example: "Acme"
+      priority?:
+        type: string
+        description: Filter by priority level
+        enum: [High, Medium, Low]
+        example: "High"
+      highPriorityOnly?:
+        type: boolean
+        description: When true, returns only High priority opportunities
+        example: true
+      stageName?:
+        type: string
+        description: Filter by exact sales stage
+        enum: [Prospecting, Qualification, Needs Analysis, Value Proposition, "Negotiation/Review", "Proposal/Price Quote", "Closed Won", "Closed Lost"]
+        example: "Value Proposition"
+    responses:
+      200:
+        description: List of matching opportunities
+        body:
+          application/json:
+            type: Opportunity[]
+            example: |
+              [
+                {
+                  "oppId": "0068000000Lx1AA",
+                  "name": "Acme Corp Enterprise License Expansion",
+                  "accountName": "Acme Corp",
+                  "amount": 250000.00,
+                  "stageName": "Value Proposition",
+                  "priority": "High",
+                  "probability": 75,
+                  "closeDate": "2026-09-30",
+                  "nextStep": "Finalize Security Review",
+                  "owner": "Srikanth K."
+                }
+              ]
+      500:
+        description: Internal server error
+        body:
+          application/json:
+            type: ErrorResponse
+
+  /{oppId}:
+    description: Single opportunity operations
+
+    patch:
+      description: Update one or more fields on an existing opportunity
+      body:
+        application/json:
+          type: OpportunityUpdate
+          example: |
+            {
+              "amount": 275000.00,
+              "stageName": "Negotiation/Review",
+              "priority": "High",
+              "nextStep": "Send revised SOW",
+              "probability": 85
+            }
+      responses:
+        200:
+          description: Successfully updated opportunity record
+          body:
+            application/json:
+              type: Opportunity
+        404:
+          description: Opportunity not found
+          body:
+            application/json:
+              type: ErrorResponse
+        500:
+          description: Internal server error
+          body:
+            application/json:
+              type: ErrorResponse
+
+    /close:
+      description: Close an opportunity as Won or Lost
+
+      patch:
+        description: Close an opportunity by setting final stage, reason, and actual amount
+        body:
+          application/json:
+            type: CloseOpportunityRequest
+            example: |
+              {
+                "stageName": "Closed Won",
+                "closeReason": "Contract executed; all requirements met",
+                "actualAmount": 250000.00
+              }
+        responses:
+          200:
+            description: Opportunity successfully closed
+            body:
+              application/json:
+                type: Opportunity
+          400:
+            description: Invalid close request (e.g. stageName not Closed Won/Lost)
+            body:
+              application/json:
+                type: ErrorResponse
+          404:
+            description: Opportunity not found
+            body:
+              application/json:
+                type: ErrorResponse
+          500:
+            description: Internal server error
+            body:
+              application/json:
+                type: ErrorResponse

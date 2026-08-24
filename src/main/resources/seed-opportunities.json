@@ -1,0 +1,122 @@
+[
+  {
+    "oppId": "0068000000Lx1AA",
+    "name": "Acme Corp Enterprise License Expansion",
+    "accountName": "Acme Corp",
+    "amount": 250000.00,
+    "stageName": "Value Proposition",
+    "priority": "High",
+    "probability": 75,
+    "closeDate": "2026-09-30",
+    "nextStep": "Finalize Security Review",
+    "owner": "Srikanth K."
+  },
+  {
+    "oppId": "0068000000Lx2BB",
+    "name": "Global Tech MuleSoft Cloud Migration",
+    "accountName": "Global Tech",
+    "amount": 180000.00,
+    "stageName": "Qualification",
+    "priority": "High",
+    "probability": 50,
+    "closeDate": "2026-08-31",
+    "nextStep": "Deliver Technical Architecture Proposal",
+    "owner": "Srikanth K."
+  },
+  {
+    "oppId": "0068000000Lx3CC",
+    "name": "Apex Logistics Omnichannel Gateway",
+    "accountName": "Apex Logistics",
+    "amount": 95000.00,
+    "stageName": "Prospecting",
+    "priority": "Medium",
+    "probability": 20,
+    "closeDate": "2026-10-15",
+    "nextStep": "Schedule Executive Discovery Call",
+    "owner": "Sarah M."
+  },
+  {
+    "oppId": "0068000000Lx4DD",
+    "name": "VSP Vision Care API Platform Scaling",
+    "accountName": "VSP Global",
+    "amount": 420000.00,
+    "stageName": "Negotiation/Review",
+    "priority": "High",
+    "probability": 90,
+    "closeDate": "2026-09-15",
+    "nextStep": "Execute Master Services Agreement",
+    "owner": "Srikanth K."
+  },
+  {
+    "oppId": "0068000000Lx5EE",
+    "name": "Starlight Retail POS Integration",
+    "accountName": "Starlight Retail",
+    "amount": 60000.00,
+    "stageName": "Closed Won",
+    "priority": "Low",
+    "probability": 100,
+    "closeDate": "2026-08-10",
+    "nextStep": "Hand over to Onboarding Team",
+    "owner": "David P."
+  },
+  {
+    "oppId": "0068000000Lx6FF",
+    "name": "Summit Health Anypoint Flex Gateway Deployment",
+    "accountName": "Summit Health",
+    "amount": 310000.00,
+    "stageName": "Needs Analysis",
+    "priority": "High",
+    "probability": 40,
+    "closeDate": "2026-11-01",
+    "nextStep": "Conduct HIPAA Compliance Validation",
+    "owner": "Srikanth K."
+  },
+  {
+    "oppId": "0068000000Lx7GG",
+    "name": "CloudFlex Systems AI Agentforce Pilot",
+    "accountName": "CloudFlex Systems",
+    "amount": 125000.00,
+    "stageName": "Value Proposition",
+    "priority": "High",
+    "probability": 60,
+    "closeDate": "2026-09-10",
+    "nextStep": "Demo MCP Server Integration",
+    "owner": "Srikanth K."
+  },
+  {
+    "oppId": "0068000000Lx8HH",
+    "name": "Internal Ops Automation Tooling",
+    "accountName": "Internal Ops",
+    "amount": 45000.00,
+    "stageName": "Qualification",
+    "priority": "Low",
+    "probability": 30,
+    "closeDate": "2026-12-01",
+    "nextStep": "Review Internal Budget Allocation",
+    "owner": "Sarah M."
+  },
+  {
+    "oppId": "0068000000Lx9II",
+    "name": "Pflugerville Logistics Tracking Portal",
+    "accountName": "Pflugerville Supply Co",
+    "amount": 110000.00,
+    "stageName": "Closed Lost",
+    "priority": "Medium",
+    "probability": 0,
+    "closeDate": "2026-07-22",
+    "nextStep": "Re-engage in Q1 2027",
+    "owner": "David P."
+  },
+  {
+    "oppId": "0068000000Lx10JJ",
+    "name": "Georgetown Real Estate Data Analytics",
+    "accountName": "Georgetown Properties",
+    "amount": 210000.00,
+    "stageName": "Proposal/Price Quote",
+    "priority": "High",
+    "probability": 70,
+    "closeDate": "2026-09-25",
+    "nextStep": "Submit Final SOW",
+    "owner": "Srikanth K."
+  }
+]

@@ -1,0 +1,481 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ============================================================
+         FLOW 1: SEED OPPORTUNITIES ON STARTUP
+         ============================================================ -->
+    <flow name="seed-opportunities-flow"
+          doc:name="Seed Opportunities Flow"
+          doc:description="Fires 1s after startup to load seed-opportunities.json into the in-memory Object Store">
+
+        <scheduler doc:name="Startup Scheduler"
+                   doc:description="Fires once at app startup (startDelay=1s); frequency=1yr means effectively runs once">
+            <scheduling-strategy>
+                <fixed-frequency frequency="31536000000" startDelay="1000" timeUnit="MILLISECONDS"/>
+            </scheduling-strategy>
+        </scheduler>
+
+        <os:contains
+            key="0068000000Lx1AA"
+            objectStore="Opportunities_Object_Store"
+            target="alreadySeeded"
+            doc:name="Check Already Seeded"
+            doc:description="Checks the Object Store for the first seed record to skip seeding if already populated" />
+
+        <choice doc:name="Seed if Empty"
+                doc:description="Seeds the Object Store when empty; skips if data already exists">
+
+            <when expression="#[!vars.alreadySeeded]"
+                  doc:name="Store is empty — seed now"
+                  doc:description="Loads seed data when the Object Store has no records">
+
+                <ee:transform doc:name="Load Seed JSON"
+                              doc:description="Reads seed-opportunities.json from classpath and outputs Java List for foreach">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+readUrl("classpath://seed-opportunities.json", "application/json")]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+
+                <foreach doc:name="For Each Seed Opportunity"
+                         doc:description="Iterates all 10 seed records and stores each by oppId">
+
+                    <os:store
+                        key="#[payload.oppId]"
+                        objectStore="Opportunities_Object_Store"
+                        doc:name="Store Opportunity Record"
+                        doc:description="Stores one opportunity into the Object Store using oppId as the unique key">
+                        <os:value>#[payload]</os:value>
+                    </os:store>
+
+                </foreach>
+
+                <logger
+                    level="INFO"
+                    message="#['[SEED] Loaded ' ++ (sizeOf(payload) as String) ++ ' opportunity records into Object Store.']"
+                    doc:name="Log Seed Success"
+                    doc:description="Confirms successful seeding with the count of records loaded" />
+
+            </when>
+
+            <otherwise doc:name="Already seeded — skip"
+                       doc:description="Skips seeding because the Object Store is already populated">
+                <logger
+                    level="INFO"
+                    message="[SEED] Object Store already populated — skipping."
+                    doc:name="Log Seed Skipped"
+                    doc:description="Logs that seed was skipped; store was already initialized" />
+            </otherwise>
+
+        </choice>
+
+        <error-handler>
+            <on-error-continue type="ANY"
+                               doc:name="Handle Seed Error"
+                               doc:description="Catches seeding errors and logs them without crashing the application">
+                <logger
+                    level="ERROR"
+                    message="#['[SEED] Seed failed: ' ++ error.description]"
+                    doc:name="Log Seed Error"
+                    doc:description="Logs seed failure details for diagnostics" />
+            </on-error-continue>
+        </error-handler>
+
+    </flow>
+
+
+    <!-- ============================================================
+         FLOW 2: GET /api/v1/opportunities
+         Parses HTTP-specific input (query params) into vars, delegates
+         to the shared list-opportunities-logic sub-flow, then formats
+         the HTTP-specific JSON response.
+         ============================================================ -->
+    <flow name="get-opportunities-flow"
+          doc:name="GET Opportunities Flow"
+          doc:description="GET /api/v1/opportunities — retrieves all records from Object Store and applies query-param filters">
+
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/api/v1/opportunities"
+            allowedMethods="GET"
+            doc:name="GET /api/v1/opportunities"
+            doc:description="Accepts GET requests; supports query params: name, priority, highPriorityOnly, stageName">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers><![CDATA[#[{'Content-Type': 'application/json'}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers><![CDATA[#[{'Content-Type': 'application/json'}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+
+        <logger
+            level="INFO"
+            message="#['[GET /opportunities] correlationId=' ++ correlationId ++ ' | queryParams=' ++ (write(attributes.queryParams, 'application/json') as String)]"
+            doc:name="Log Incoming GET"
+            doc:description="Logs the GET request with correlation ID and all active query parameters" />
+
+        <set-variable variableName="nameFilter" value="#[attributes.queryParams.name default '']" doc:name="Set nameFilter" />
+        <set-variable variableName="priorityFilter" value="#[attributes.queryParams.priority default '']" doc:name="Set priorityFilter" />
+        <set-variable variableName="stageFilter" value="#[attributes.queryParams.stageName default '']" doc:name="Set stageFilter" />
+        <set-variable variableName="highPriorityOnly" value="#[attributes.queryParams.highPriorityOnly default 'false']" doc:name="Set highPriorityOnly" />
+
+        <flow-ref name="list-opportunities-logic" doc:name="List Opportunities" />
+
+        <ee:transform doc:name="Format JSON Response">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+            </ee:message>
+            <ee:variables>
+                <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+200]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+
+        <logger
+            level="INFO"
+            message="#['[GET /opportunities] Returning ' ++ (vars.recordCount as String) ++ ' records | correlationId=' ++ correlationId]"
+            doc:name="Log Response Count"
+            doc:description="Logs how many opportunity records are being returned after filtering" />
+
+        <error-handler>
+            <on-error-propagate type="ANY"
+                                doc:name="Handle GET Error"
+                                doc:description="Catches unexpected errors and returns a structured 500 JSON response">
+                <ee:transform doc:name="Build 500 Error"
+                              doc:description="Serializes the error into a JSON 500 response with correlationId and timestamp">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: 500,
+    message: error.description default "Failed to retrieve opportunities",
+    correlationId: correlationId,
+    timestamp: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss.SSSZ"}
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+500]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <logger level="ERROR"
+                        message="#['[GET /opportunities] Error: ' ++ error.description ++ ' | correlationId=' ++ correlationId]"
+                        doc:name="Log GET Error"
+                        doc:description="Logs GET failure details with correlation ID" />
+            </on-error-propagate>
+        </error-handler>
+
+    </flow>
+
+
+    <!-- ============================================================
+         FLOW 3: PATCH /api/v1/opportunities/{oppId}
+         Parses HTTP-specific input (uriParam + JSON body) into vars,
+         delegates to the shared update-opportunity-logic sub-flow, then
+         formats the HTTP-specific 200/404 JSON response.
+         ============================================================ -->
+    <flow name="patch-opportunity-flow"
+          doc:name="PATCH Opportunity Flow"
+          doc:description="PATCH /api/v1/opportunities/{oppId} — merges request fields into existing record; returns 404 if not found">
+
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/api/v1/opportunities/{oppId}"
+            allowedMethods="PATCH"
+            doc:name="PATCH /api/v1/opportunities/{oppId}"
+            doc:description="Accepts PATCH requests to update amount, stageName, priority, nextStep, closeDate, or probability">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers><![CDATA[#[{'Content-Type': 'application/json'}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers><![CDATA[#[{'Content-Type': 'application/json'}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+
+        <logger
+            level="INFO"
+            message="#['[PATCH /opportunities/' ++ attributes.uriParams.oppId ++ '] correlationId=' ++ correlationId]"
+            doc:name="Log PATCH Request"
+            doc:description="Logs the incoming PATCH update request with oppId and correlation ID" />
+
+        <set-variable variableName="targetOppId" value="#[attributes.uriParams.oppId]" doc:name="Set targetOppId" />
+        <set-variable
+            variableName="updateFields"
+            value="#[output application/java --- payload]"
+            doc:name="Set updateFields"
+            doc:description="Captures the incoming JSON body as a plain Java map before Object Store operations overwrite payload" />
+
+        <flow-ref name="update-opportunity-logic" doc:name="Update Opportunity" />
+
+        <choice doc:name="Route: Updated or 404">
+
+            <when expression="#[vars.oppFound]" doc:name="Opportunity found — 200">
+
+                <ee:transform doc:name="Format Updated Response"
+                              doc:description="Converts the updated Java Map to a JSON 200 OK response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+200]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+
+                <logger
+                    level="INFO"
+                    message="#['[PATCH /opportunities/' ++ attributes.uriParams.oppId ++ '] Updated | correlationId=' ++ correlationId]"
+                    doc:name="Log Update Success"
+                    doc:description="Logs successful field-level update of the opportunity record" />
+
+            </when>
+
+            <otherwise doc:name="Not found — 404"
+                       doc:description="Returns a JSON 404 error when the requested oppId does not exist in the store">
+                <ee:transform doc:name="Build 404 Response"
+                              doc:description="Creates a structured JSON 404 error payload for the not-found opportunity">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: 404,
+    message: "Opportunity not found: " ++ attributes.uriParams.oppId,
+    correlationId: correlationId,
+    timestamp: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss.SSSZ"}
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+404]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <logger level="WARN"
+                        message="#['[PATCH /opportunities/' ++ attributes.uriParams.oppId ++ '] Not found | correlationId=' ++ correlationId]"
+                        doc:name="Log 404"
+                        doc:description="Warns when a PATCH request targets an unknown oppId" />
+            </otherwise>
+
+        </choice>
+
+        <error-handler>
+            <on-error-propagate type="ANY"
+                                doc:name="Handle PATCH Error"
+                                doc:description="Catches unexpected update errors and returns a 500 JSON response">
+                <ee:transform doc:name="Build 500 Error"
+                              doc:description="Serializes the error into a JSON 500 response with correlationId and timestamp">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: 500,
+    message: error.description default "Failed to update opportunity",
+    correlationId: correlationId,
+    timestamp: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss.SSSZ"}
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+500]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <logger level="ERROR"
+                        message="#['[PATCH /opportunities] Error: ' ++ error.description ++ ' | correlationId=' ++ correlationId]"
+                        doc:name="Log PATCH Error"
+                        doc:description="Logs PATCH update error details with correlation ID" />
+            </on-error-propagate>
+        </error-handler>
+
+    </flow>
+
+
+    <!-- ============================================================
+         FLOW 4: PATCH /api/v1/opportunities/{oppId}/close
+         Parses HTTP-specific input (uriParam + JSON body) into vars,
+         delegates to the shared close-opportunity-logic sub-flow, then
+         formats the HTTP-specific 200/400/404 JSON response.
+         ============================================================ -->
+    <flow name="patch-close-opportunity-flow"
+          doc:name="PATCH Close Opportunity Flow"
+          doc:description="PATCH /api/v1/opportunities/{oppId}/close — validates stageName (Closed Won/Lost), stamps probability, actualAmount, and closeDate">
+
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/api/v1/opportunities/{oppId}/close"
+            allowedMethods="PATCH"
+            doc:name="PATCH /api/v1/opportunities/{oppId}/close"
+            doc:description="Accepts PATCH requests to close an opportunity; body requires stageName (Closed Won or Closed Lost)">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers><![CDATA[#[{'Content-Type': 'application/json'}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers><![CDATA[#[{'Content-Type': 'application/json'}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+
+        <logger
+            level="INFO"
+            message="#['[PATCH /opportunities/' ++ attributes.uriParams.oppId ++ '/close] correlationId=' ++ correlationId]"
+            doc:name="Log Close Request"
+            doc:description="Logs the incoming close request with oppId and correlation ID" />
+
+        <set-variable variableName="targetOppId" value="#[attributes.uriParams.oppId]" doc:name="Set targetOppId" />
+        <set-variable
+            variableName="closeFields"
+            value="#[output application/java --- payload]"
+            doc:name="Set closeFields"
+            doc:description="Captures the JSON close request (stageName, closeReason, actualAmount) as a plain Java value" />
+
+        <flow-ref name="close-opportunity-logic" doc:name="Close Opportunity" />
+
+        <choice doc:name="Route: Invalid, 404, or Closed">
+
+            <when expression="#[!vars.validationValid]" doc:name="Invalid stageName — 400">
+                <ee:transform doc:name="Build 400 Response"
+                              doc:description="Creates a JSON 400 error payload for invalid stageName on close">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: 400,
+    message: vars.validationMessage,
+    correlationId: correlationId,
+    timestamp: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss.SSSZ"}
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+400]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <logger level="WARN"
+                        message="#['[CLOSE] Invalid stageName | correlationId=' ++ correlationId]"
+                        doc:name="Log Invalid stageName"
+                        doc:description="Warns when an invalid stageName is supplied on the close endpoint" />
+            </when>
+
+            <when expression="#[!vars.oppFound]" doc:name="Not found — 404">
+                <ee:transform doc:name="Build 404 Response"
+                              doc:description="Creates a JSON 404 error payload for the unknown opportunity on close">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: 404,
+    message: "Opportunity not found: " ++ attributes.uriParams.oppId,
+    correlationId: correlationId,
+    timestamp: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss.SSSZ"}
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+404]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <logger level="WARN"
+                        message="#['[CLOSE] Opportunity not found: ' ++ attributes.uriParams.oppId ++ ' | correlationId=' ++ correlationId]"
+                        doc:name="Log Close 404"
+                        doc:description="Warns when a close request targets an unknown oppId" />
+            </when>
+
+            <otherwise doc:name="Opportunity found — closed">
+
+                <ee:transform doc:name="Format Close Response"
+                              doc:description="Converts the closed opportunity Java Map to a JSON 200 OK response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+200]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+
+                <logger
+                    level="INFO"
+                    message="#['[CLOSE] ' ++ attributes.uriParams.oppId ++ ' closed as ' ++ (vars.closeFields.stageName as String) ++ ' | correlationId=' ++ correlationId]"
+                    doc:name="Log Close Success"
+                    doc:description="Logs successful close of the opportunity with final stage and correlation ID" />
+
+            </otherwise>
+
+        </choice>
+
+        <error-handler>
+            <on-error-propagate type="ANY"
+                                doc:name="Handle Close Error"
+                                doc:description="Catches unexpected errors during close flow and returns a 500 JSON response">
+                <ee:transform doc:name="Build 500 Error"
+                              doc:description="Serializes the error into a JSON 500 response with correlationId and timestamp">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: 500,
+    message: error.description default "Failed to close opportunity",
+    correlationId: correlationId,
+    timestamp: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss.SSSZ"}
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+500]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <logger level="ERROR"
+                        message="#['[CLOSE] Error: ' ++ error.description ++ ' | correlationId=' ++ correlationId]"
+                        doc:name="Log Close Error"
+                        doc:description="Logs close flow error details with correlation ID" />
+            </on-error-propagate>
+        </error-handler>
+
+    </flow>
+
+</mule>
