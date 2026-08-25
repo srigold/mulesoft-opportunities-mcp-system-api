@@ -3,6 +3,9 @@ http:
   port: "8081"
   basePath: "/api/v1"
 
+api:
+  id: "21125532"
+
 objectstore:
   name: "Opportunities_Object_Store"
   persistent: "false"
